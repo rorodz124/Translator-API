@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API de Tradução</title>
+
+
+    <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
+    <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            color: #2d3a8c;
+            font-weight: 700;
+        }
+
+        header p {
+            color: #666;
+            margin-top: .4rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,.08);
+        }
+
+        .card h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #444;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        #editor-container {
+            border-radius: 0 0 8px 8px;
+        }
+
+        .ql-toolbar { border-radius: 8px 8px 0 0 !important; }
+        .ql-container { border-radius: 0 0 8px 8px !important; min-height: 180px; font-size: 1rem; }
+
+
+        .source-row {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        select {
+            padding: .5rem .75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: .95rem;
+            background: white;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .lang-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: .6rem;
+        }
+
+        .lang-item {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .5rem .75rem;
+            border: 1.5px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all .15s;
+            user-select: none;
+        }
+
+        .lang-item:hover { border-color: #2d3a8c; background: #f5f6ff; }
+        .lang-item input[type=checkbox]:checked + .lang-label { font-weight: 600; color: #2d3a8c; }
+        .lang-item:has(input:checked) { border-color: #2d3a8c; background: #eef0ff; }
+
+        input[type=checkbox] { width: 16px; height: 16px; accent-color: #2d3a8c; cursor: pointer; }
+
+        .btn-row {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: .65rem 1.4rem;
+            border: none;
+            border-radius: 8px;
+            font-size: .95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .15s;
+        }
+
+        #btn-translate {
+            background: #2d3a8c;
+            color: white;
+            flex: 1;
+        }
+
+        #btn-translate:hover { background: #1e286b; }
+        #btn-translate:disabled { background: #9aa0c9; cursor: not-allowed; }
+
+        #btn-publish {
+            background: #17a34a;
+            color: white;
+            display: none;
+        }
+
+        #btn-publish:hover { background: #138a3d; }
+
+        #status {
+            font-size: .9rem;
+            padding: .5rem .75rem;
+            border-radius: 8px;
+            display: none;
+        }
+
+        #status.info  { background: #e8f0fe; color: #1a56db; display: block; }
+        #status.ok    { background: #d1fae5; color: #065f46; display: block; }
+        #status.error { background: #fee2e2; color: #991b1b; display: block; }
+
+        .result-block {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        .result-header {
+            background: #f9fafb;
+            padding: .65rem 1rem;
+            font-size: .85rem;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: .4rem;
+        }
+
+        .result-content {
+            padding: 1rem;
+            font-size: .95rem;
+            line-height: 1.6;
+        }
+
+        .result-content h1 { font-size: 1.5rem; margin-bottom: .5rem; }
+        .result-content h2 { font-size: 1.25rem; margin-bottom: .4rem; }
+        .result-content p  { margin-bottom: .4rem; }
+
+        #results-area { display: none; }
+
+        .flag { font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>API de Tradução</h1>
+    </header>
+
+    <div class="card">
+        <h2>Texto a traduzir</h2>
+        <div id="editor-container">
+            <div id="editor">
+                <p>Escreve ou cola aqui o texto que queres traduzir.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Idioma de origem</h2>
+        <div class="source-row">
+            <select id="source-lang">
+                <option value="pt">🇵🇹 Português</option>
+                <option value="en">🇬🇧 Inglês</option>
+                <option value="fr">🇫🇷 Francês</option>
+                <option value="es">🇪🇸 Espanhol</option>
+                <option value="de">🇩🇪 Alemão</option>
+                <option value="it">🇮🇹 Italiano</option>
+                <option value="zh">🇨🇳 Chinês</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Idiomas de destino</h2>
+        <div class="lang-grid">
+            <label class="lang-item"><input type="checkbox" value="en" checked /><span class="lang-label">🇬🇧 Inglês</span></label>
+            <label class="lang-item"><input type="checkbox" value="fr" /><span class="lang-label">🇫🇷 Francês</span></label>
+            <label class="lang-item"><input type="checkbox" value="es" /><span class="lang-label">🇪🇸 Espanhol</span></label>
+            <label class="lang-item"><input type="checkbox" value="de" /><span class="lang-label">🇩🇪 Alemão</span></label>
+            <label class="lang-item"><input type="checkbox" value="it" /><span class="lang-label">🇮🇹 Italiano</span></label>
+            <label class="lang-item"><input type="checkbox" value="nl" /><span class="lang-label">🇳🇱 Holandês</span></label>
+            <label class="lang-item"><input type="checkbox" value="zh" /><span class="lang-label">🇨🇳 Chinês</span></label>
+            <label class="lang-item"><input type="checkbox" value="ja" /><span class="lang-label">🇯🇵 Japonês</span></label>
+            <label class="lang-item"><input type="checkbox" value="ar" /><span class="lang-label">🇸🇦 Árabe</span></label>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="btn-row" style="margin-bottom: .75rem;">
+            <button id="btn-translate">Traduzir</button>
+            <button id="btn-publish">Publicar e Guardar</button>
+        </div>
+        <div id="status"></div>
+    </div>
+
+    <div id="results-area">
+        <div class="card">
+            <h2>Resultados</h2>
+            <div id="results-container"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = 'http://localhost:5100/api';
+
+    const LANG_NAMES = {
+        pt: '🇵🇹 Português', en: '🇬🇧 Inglês', fr: '🇫🇷 Francês',
+        es: '🇪🇸 Espanhol', de: '🇩🇪 Alemão', it: '🇮🇹 Italiano',
+        nl: '🇳🇱 Holandês', zh: '🇨🇳 Chinês', ja: '🇯🇵 Japonês', ar: '🇸🇦 Árabe'
+    };
+
+    const quill = new Quill('#editor', {
+        theme: 'snow',
+        modules: {
+            toolbar: [
+                [{ header: [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ list: 'ordered' }, { list: 'bullet' }],
+                ['clean']
+            ]
+        }
+    });
+
+    let lastRecord = null;
+
+    function setStatus(msg, type) {
+        const el = document.getElementById('status');
+        el.textContent = msg;
+        el.className = type;
+    }
+
+    function getSelectedLangs() {
+        return [...document.querySelectorAll('.lang-item input:checked')].map(cb => cb.value);
+    }
+
+    document.getElementById('btn-translate').addEventListener('click', async () => {
+        const html = quill.root.innerHTML.trim();
+        const sourceLang = document.getElementById('source-lang').value;
+        const targetLangs = getSelectedLangs();
+
+        if (!html || html === '<p><br></p>') {
+            setStatus('Escreve algum texto antes de traduzir.', 'error'); return;
+        }
+        if (targetLangs.length === 0) {
+            setStatus('Seleciona pelo menos um idioma de destino.', 'error'); return;
+        }
+
+        const btn = document.getElementById('btn-translate');
+        btn.disabled = true;
+        btn.textContent = 'A traduzir...';
+        setStatus(`A traduzir...`, 'info');
+        document.getElementById('results-area').style.display = 'none';
+        document.getElementById('btn-publish').style.display = 'none';
+
+        try {
+            const res = await fetch(`${API_BASE}/translate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ htmlContent: html, sourceLanguage: sourceLang, targetLanguages: targetLangs })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                setStatus(`Erro: ${data.error ?? 'Erro desconhecido'}`, 'error'); return;
+            }
+
+            lastRecord = data.result;
+            renderResults(data.result);
+            setStatus(`${data.message}`, 'ok');
+            document.getElementById('btn-publish').style.display = 'inline-block';
+
+        } catch (err) {
+            setStatus(`Não foi possível ligar à API. Confirma que o servidor está a correr.\n${err.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Traduzir';
+        }
+    });
+
+    document.getElementById('btn-publish').addEventListener('click', async () => {
+        if (!lastRecord) return;
+
+        const btn = document.getElementById('btn-publish');
+        btn.disabled = true;
+        btn.textContent = 'A guardar...';
+        setStatus('A publicar e guardar no ficheiro JSON...', 'info');
+
+        try {
+            const res = await fetch(`${API_BASE}/publish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ record: lastRecord })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                setStatus(`Erro ao publicar: ${data.error ?? 'Erro desconhecido'}`, 'error'); return;
+            }
+
+            setStatus(`${data.message} (Total no histórico: ${data.totalRecords} registo(s))`, 'ok');
+            btn.style.display = 'none';
+
+        } catch (err) {
+            setStatus(`Erro ao ligar ao endpoint /publish: ${err.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Publicar e Guardar';
+        }
+    });
+
+    function renderResults(record) {
+        const container = document.getElementById('results-container');
+        container.innerHTML = '';
+
+        const origBlock = createResultBlock('Original - ' + (LANG_NAMES[record.sourceLanguage] ?? record.sourceLanguage), record.originalText);
+        container.appendChild(origBlock);
+
+        for (const t of record.translations) {
+            const name = LANG_NAMES[t.language] ?? t.language.toUpperCase();
+            const block = createResultBlock(name, t.translatedText);
+            container.appendChild(block);
+        }
+
+        document.getElementById('results-area').style.display = 'block';
+    }
+
+    function createResultBlock(title, html) {
+        const block = document.createElement('div');
+        block.className = 'result-block';
+        block.innerHTML = `
+            <div class="result-header">${title}</div>
+            <div class="result-content">${html}</div>
+        `;
+        return block;
+    }
+</script>
+
+</body>
+</html>
