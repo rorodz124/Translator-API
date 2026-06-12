@@ -1,0 +1,21 @@
+services:
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: libretranslate
+    restart: unless-stopped
+    ports:
+      - "5050:5000"
+    environment:
+      - LT_LOAD_ONLY=pt,en,fr,es,de,it,nl,zh,ja,ar
+      - LT_UPDATE_MODELS=true
+    volumes:
+      - lt_models:/home/libretranslate/.local/share/argos-translate
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/languages || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  lt_models:

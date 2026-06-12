@@ -1,6 +1,17 @@
-@TranslatorApi_HostAddress = http://localhost:5097
+@TranslatorApi_HostAddress = http://localhost:5100
 
-GET {{TranslatorApi_HostAddress}}/weatherforecast/
+POST {{TranslatorApi_HostAddress}}/api/translate
+Content-Type: application/json
+
+{
+  "htmlContent": "<h1>Hello World</h1><p>This is a <strong>test</strong>.</p>",
+  "sourceLanguage": "en",
+  "targetLanguages": ["pt", "fr"]
+}
+
+###
+
+GET {{TranslatorApi_HostAddress}}/api/history
 Accept: application/json
 
 ###
