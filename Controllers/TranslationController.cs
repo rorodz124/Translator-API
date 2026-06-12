@@ -17,19 +17,20 @@ public class TranslationController : ControllerBase
         _logger = logger;
     }
 
+
     [HttpPost("translate")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TranslationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<IActionResult> Translate([FromBody] TranslationRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.HtmlContent))
-            return BadRequest(new { error = "The 'htmlContent' field cannot be empty." });
+            return BadRequest(new { error = "O campo 'htmlContent' não pode estar vazio." });
 
         if (request.TargetLanguages == null || request.TargetLanguages.Count == 0)
-            return BadRequest(new { error = "Please select at least one target language." });
+            return BadRequest(new { error = "Seleciona pelo menos um idioma de destino." });
 
-        _logger.LogInformation("Translation request: source={src}, targets={targets}",
+        _logger.LogInformation("Pedido de tradução: origem={src}, destinos={targets}",
             request.SourceLanguage, string.Join(", ", request.TargetLanguages));
 
         try
@@ -38,26 +39,59 @@ public class TranslationController : ControllerBase
             return Ok(new TranslationResponse
             {
                 Success = true,
-                Message = $"{record.Translations.Count} translation(s) completed and saved.",
+                Message = $"tradução concluída.",
                 Result = record
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error during translation.");
+            _logger.LogError(ex, "Erro inesperado durante a tradução.");
             return StatusCode(502, new { error = ex.Message });
         }
     }
 
+
+    [HttpPost("publish")]
+    [ProducesResponseType(typeof(PublishResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Publish([FromBody] PublishRequest request)
+    {
+        if (request.Record == null)
+            return BadRequest(new { error = "O campo 'record' é obrigatório." });
+
+        if (string.IsNullOrWhiteSpace(request.Record.OriginalText))
+            return BadRequest(new { error = "O registo não tem texto original." });
+
+        _logger.LogInformation("A publicar registo de tradução ({count} idioma(s))...",
+            request.Record.Translations.Count);
+
+        try
+        {
+            var totalRecords = await _translationService.PublishAsync(request.Record);
+            return Ok(new PublishResponse
+            {
+                Success = true,
+                Message = "Registo guardado com sucesso no ficheiro JSON.",
+                TotalRecords = totalRecords
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao publicar registo.");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+
     [HttpGet("history")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult GetHistory([FromServices] IConfiguration config)
+    public async Task<IActionResult> GetHistory()
     {
-        var filePath = config["Storage:FilePath"] ?? "translations_history.json";
+        var history = await _translationService.GetHistoryAsync();
 
-        if (!System.IO.File.Exists(filePath))
-            return Ok(new { message = "No translations have been saved yet." });
+        if (history.Count == 0)
+            return Ok(new { message = "Ainda não há traduções guardadas.", records = history });
 
-        return Content(System.IO.File.ReadAllText(filePath), "application/json");
+        return Ok(new { total = history.Count, records = history });
     }
 }

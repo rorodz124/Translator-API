@@ -13,23 +13,25 @@ public class TranslationService
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
     public TranslationService(HttpClient httpClient, IConfiguration config, ILogger<TranslationService> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
-        _outputFilePath = config["Storage:FilePath"] ?? "traducoes_historico.json";
+        _outputFilePath = config["Storage:FilePath"] ?? "translations_history.json";
     }
+
 
     public async Task<TranslationRecord> TranslateAsync(TranslationRequest request)
     {
         var record = new TranslationRecord
         {
-            DataPedido = DateTime.Now,
-            IdiomaOrigem = request.SourceLanguage,
-            TextoOriginal = request.HtmlContent
+            RequestDate = DateTime.UtcNow,
+            SourceLanguage = request.SourceLanguage,
+            OriginalText = request.HtmlContent
         };
 
         foreach (var targetLang in request.TargetLanguages)
@@ -38,18 +40,42 @@ public class TranslationService
             try
             {
                 var translated = await CallLibreTranslateAsync(request.HtmlContent, request.SourceLanguage, targetLang);
-                record.Traducoes.Add(new TranslationResult { Idioma = targetLang, TextoTraduzido = translated });
+                record.Translations.Add(new TranslationResult
+                {
+                    Language = targetLang,
+                    TranslatedText = translated
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erro ao traduzir para {lang}", targetLang);
-                record.Traducoes.Add(new TranslationResult { Idioma = targetLang, TextoTraduzido = $"[ERRO: {ex.Message}]" });
+                record.Translations.Add(new TranslationResult
+                {
+                    Language = targetLang,
+                    TranslatedText = $"[ERRO: {ex.Message}]"
+                });
             }
         }
 
-        await SaveToJsonFileAsync(record);
         return record;
     }
+
+
+    public async Task<int> PublishAsync(TranslationRecord record)
+    {
+        var history = await LoadHistoryAsync();
+        history.Add(record);
+        await SaveHistoryAsync(history);
+        _logger.LogInformation("Publicado em '{path}' ({count} registo(s)).", _outputFilePath, history.Count);
+        return history.Count;
+    }
+
+
+    public async Task<List<TranslationRecord>> GetHistoryAsync()
+    {
+        return await LoadHistoryAsync();
+    }
+
 
     private async Task<string> CallLibreTranslateAsync(string html, string source, string target)
     {
@@ -69,22 +95,27 @@ public class TranslationService
         return translatedText.GetString() ?? string.Empty;
     }
 
-    private async Task SaveToJsonFileAsync(TranslationRecord record)
+
+    private async Task<List<TranslationRecord>> LoadHistoryAsync()
     {
-        List<TranslationRecord> history = new();
+        if (!File.Exists(_outputFilePath))
+            return new List<TranslationRecord>();
 
-        if (File.Exists(_outputFilePath))
+        try
         {
-            try
-            {
-                var existing = await File.ReadAllTextAsync(_outputFilePath, Encoding.UTF8);
-                history = JsonSerializer.Deserialize<List<TranslationRecord>>(existing, _jsonOptions) ?? new();
-            }
-            catch { _logger.LogWarning("Ficheiro JSON corrompido — a criar novo."); }
+            var json = await File.ReadAllTextAsync(_outputFilePath, Encoding.UTF8);
+            return JsonSerializer.Deserialize<List<TranslationRecord>>(json, _jsonOptions) ?? new();
         }
+        catch
+        {
+            _logger.LogWarning("Ficheiro JSON corrompido — a começar histórico novo.");
+            return new List<TranslationRecord>();
+        }
+    }
 
-        history.Add(record);
+
+    private async Task SaveHistoryAsync(List<TranslationRecord> history)
+    {
         await File.WriteAllTextAsync(_outputFilePath, JsonSerializer.Serialize(history, _jsonOptions), Encoding.UTF8);
-        _logger.LogInformation("Guardado em '{path}' ({count} registo(s)).", _outputFilePath, history.Count);
     }
 }

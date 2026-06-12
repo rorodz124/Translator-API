@@ -7,23 +7,40 @@ public class TranslationRequest
     public List<string> TargetLanguages { get; set; } = new();
 }
 
+
 public class TranslationResult
 {
-    public string Idioma { get; set; } = string.Empty;
-    public string TextoTraduzido { get; set; } = string.Empty;
+    public string Language { get; set; } = string.Empty;
+    public string TranslatedText { get; set; } = string.Empty;
 }
+
 
 public class TranslationRecord
 {
-    public DateTime DataPedido { get; set; } = DateTime.Now;
-    public string IdiomaOrigem { get; set; } = string.Empty;
-    public string TextoOriginal { get; set; } = string.Empty;
-    public List<TranslationResult> Traducoes { get; set; } = new();
+    public DateTime RequestDate { get; set; } = DateTime.UtcNow;
+    public string SourceLanguage { get; set; } = string.Empty;
+    public string OriginalText { get; set; } = string.Empty;
+    public List<TranslationResult> Translations { get; set; } = new();
 }
+
 
 public class TranslationResponse
 {
-    public bool Sucesso { get; set; }
-    public string Mensagem { get; set; } = string.Empty;
-    public TranslationRecord? Resultado { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public TranslationRecord? Result { get; set; }
+}
+
+
+public class PublishRequest
+{
+    public TranslationRecord Record { get; set; } = new();
+}
+
+
+public class PublishResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int TotalRecords { get; set; }
 }
