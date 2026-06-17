@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using TranslatorApi.Models;
+using Microsoft.Extensions.Hosting;
 
 namespace TranslatorApi.Services;
 
@@ -8,7 +9,7 @@ public class TranslationService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<TranslationService> _logger;
-    private readonly string _outputFilePath;
+    private readonly string _historicoFolder;
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -17,11 +18,31 @@ public class TranslationService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public TranslationService(HttpClient httpClient, IConfiguration config, ILogger<TranslationService> logger)
+    public TranslationService(HttpClient httpClient, IConfiguration config, IHostEnvironment env, ILogger<TranslationService> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
-        _outputFilePath = config["Storage:FilePath"] ?? "translations_history.json";
+        _historicoFolder = ResolveFolder(config["Storage:HistoricoFolder"], env.ContentRootPath);
+    }
+
+    private static string ResolveFolder(string? configured, string contentRootPath)
+    {
+        // Se vier um caminho absoluto na config, usa-o directamente
+        if (!string.IsNullOrWhiteSpace(configured) && Path.IsPathRooted(configured))
+        {
+            Directory.CreateDirectory(configured);
+            return configured;
+        }
+
+        // Por defeito, guarda numa pasta "historico" na raiz do projeto
+        // (ContentRootPath = pasta onde está o .csproj quando corres com "dotnet run" / VS Code)
+        var subFolder = !string.IsNullOrWhiteSpace(configured)
+            ? configured                        // nome/caminho relativo vindo da config
+            : "historico";
+
+        var folder = Path.Combine(contentRootPath, subFolder);
+        Directory.CreateDirectory(folder);
+        return folder;
     }
 
 
@@ -60,20 +81,63 @@ public class TranslationService
         return record;
     }
 
-
-    public async Task<int> PublishAsync(TranslationRecord record)
+    public async Task<string> PublishAsync(TranslationRecord record)
     {
-        var history = await LoadHistoryAsync();
-        history.Add(record);
-        await SaveHistoryAsync(history);
-        _logger.LogInformation("Publicado em '{path}' ({count} registo(s)).", _outputFilePath, history.Count);
-        return history.Count;
+        var langs = string.Join("-", record.Translations.Select(t => t.Language));
+        var timestamp = record.RequestDate.ToString("yyyyMMdd_HHmmss");
+        var fileName = $"traducao_{timestamp}_{record.SourceLanguage}-{langs}.json";
+        var filePath = Path.Combine(_historicoFolder, fileName);
+
+        var json = JsonSerializer.Serialize(record, _jsonOptions);
+        await File.WriteAllTextAsync(filePath, json, Encoding.UTF8);
+
+        _logger.LogInformation("Guardado: '{path}'", filePath);
+        return fileName;
+    }
+
+    public List<HistoricoEntry> ListHistorico()
+    {
+        return Directory
+            .EnumerateFiles(_historicoFolder, "traducao_*.json")
+            .Select(path => new FileInfo(path))
+            .OrderByDescending(fi => fi.LastWriteTimeUtc)
+            .Select(fi => new HistoricoEntry
+            {
+                FileName = fi.Name,
+                CreatedAt = fi.LastWriteTimeUtc,
+                SizeBytes = fi.Length
+            })
+            .ToList();
     }
 
 
-    public async Task<List<TranslationRecord>> GetHistoryAsync()
+    public async Task<(byte[] bytes, string fileName)?> DownloadAsync(string fileName)
     {
-        return await LoadHistoryAsync();
+        var safe = Path.GetFileName(fileName);
+        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
+            return null;
+
+        var path = Path.Combine(_historicoFolder, safe);
+        if (!File.Exists(path))
+            return null;
+
+        var bytes = await File.ReadAllBytesAsync(path);
+        return (bytes, safe);
+    }
+
+
+    public async Task<TranslationRecord?> GetRecordAsync(string fileName)
+    {
+        var safe = Path.GetFileName(fileName);
+        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
+            return null;
+
+        var path = Path.Combine(_historicoFolder, safe);
+        if (!File.Exists(path))
+            return null;
+
+        var json = await File.ReadAllTextAsync(path, Encoding.UTF8);
+        return JsonSerializer.Deserialize<TranslationRecord>(json, _jsonOptions);
     }
 
 
@@ -93,29 +157,5 @@ public class TranslationService
             throw new Exception("Resposta do LibreTranslate não contém 'translatedText'.");
 
         return translatedText.GetString() ?? string.Empty;
-    }
-
-
-    private async Task<List<TranslationRecord>> LoadHistoryAsync()
-    {
-        if (!File.Exists(_outputFilePath))
-            return new List<TranslationRecord>();
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(_outputFilePath, Encoding.UTF8);
-            return JsonSerializer.Deserialize<List<TranslationRecord>>(json, _jsonOptions) ?? new();
-        }
-        catch
-        {
-            _logger.LogWarning("Ficheiro JSON corrompido — a começar histórico novo.");
-            return new List<TranslationRecord>();
-        }
-    }
-
-
-    private async Task SaveHistoryAsync(List<TranslationRecord> history)
-    {
-        await File.WriteAllTextAsync(_outputFilePath, JsonSerializer.Serialize(history, _jsonOptions), Encoding.UTF8);
     }
 }

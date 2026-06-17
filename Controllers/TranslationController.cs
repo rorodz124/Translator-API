@@ -39,7 +39,7 @@ public class TranslationController : ControllerBase
             return Ok(new TranslationResponse
             {
                 Success = true,
-                Message = $"tradução concluída.",
+                Message = "Tradução concluída.",
                 Result = record
             });
         }
@@ -52,7 +52,7 @@ public class TranslationController : ControllerBase
 
 
     [HttpPost("publish")]
-    [ProducesResponseType(typeof(PublishResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Publish([FromBody] PublishRequest request)
     {
@@ -62,36 +62,57 @@ public class TranslationController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Record.OriginalText))
             return BadRequest(new { error = "O registo não tem texto original." });
 
-        _logger.LogInformation("A publicar registo de tradução ({count} idioma(s))...",
+        _logger.LogInformation("A guardar registo de tradução ({count} idioma(s))...",
             request.Record.Translations.Count);
 
         try
         {
-            var totalRecords = await _translationService.PublishAsync(request.Record);
-            return Ok(new PublishResponse
+            var fileName = await _translationService.PublishAsync(request.Record);
+            return Ok(new
             {
-                Success = true,
-                Message = "Registo guardado com sucesso no ficheiro JSON.",
-                TotalRecords = totalRecords
+                success = true,
+                message = "Tradução guardada com sucesso.",
+                fileName
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao publicar registo.");
+            _logger.LogError(ex, "Erro ao guardar registo.");
             return StatusCode(500, new { error = ex.Message });
         }
     }
 
 
-    [HttpGet("history")]
+    [HttpGet("historico")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetHistory()
+    public IActionResult GetHistorico()
     {
-        var history = await _translationService.GetHistoryAsync();
+        var entries = _translationService.ListHistorico();
+        return Ok(new { total = entries.Count, entries });
+    }
 
-        if (history.Count == 0)
-            return Ok(new { message = "Ainda não há traduções guardadas.", records = history });
 
-        return Ok(new { total = history.Count, records = history });
+    [HttpGet("historico/{fileName}")]
+    public async Task<IActionResult> DownloadHistorico(string fileName)
+    {
+        var result = await _translationService.DownloadAsync(fileName);
+        if (result is null)
+            return NotFound(new { error = "Ficheiro não encontrado ou nome inválido." });
+
+        var (bytes, name) = result.Value;
+        return File(bytes, "application/json", name);
+    }
+
+
+    [HttpGet("historico/{fileName}/conteudo")]
+    [ProducesResponseType(typeof(TranslationRecord), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHistoricoConteudo(string fileName)
+    {
+        var record = await _translationService.GetRecordAsync(fileName);
+        if (record is null)
+            return NotFound(new { error = "Ficheiro não encontrado ou nome inválido." });
+
+        return Ok(record);
     }
 }

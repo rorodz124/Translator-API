@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>API de Tradução</title>
 
-
     <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
     <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
 
@@ -65,7 +64,6 @@
 
         .ql-toolbar { border-radius: 8px 8px 0 0 !important; }
         .ql-container { border-radius: 0 0 8px 8px !important; min-height: 180px; font-size: 1rem; }
-
 
         .source-row {
             display: flex;
@@ -183,6 +181,92 @@
         #results-area { display: none; }
 
         .flag { font-size: 1.1rem; }
+
+        #btn-clear {
+            background: transparent;
+            color: #888;
+            border: 1.5px solid #ddd;
+            padding: .35rem .9rem;
+            font-size: .85rem;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all .15s;
+        }
+
+        #btn-clear:hover {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #fca5a5;
+        }
+
+        #historico-area { margin-top: 0; }
+
+        .hist-list { display: flex; flex-direction: column; gap: .5rem; }
+
+        .hist-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .6rem .9rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fafafa;
+            font-size: .9rem;
+            gap: 1rem;
+        }
+
+        .hist-item:hover { background: #f0f2ff; border-color: #c7cdf5; }
+
+        .hist-meta { color: #666; font-size: .8rem; margin-top: .15rem; }
+
+        .btn-download {
+            background: #2d3a8c;
+            color: white;
+            padding: .35rem .85rem;
+            font-size: .82rem;
+            border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .btn-download:hover { background: #1e286b; }
+
+        .btn-view {
+            background: transparent;
+            color: #2d3a8c;
+            border: 1.5px solid #2d3a8c;
+            padding: .35rem .85rem;
+            font-size: .82rem;
+            border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-view:hover { background: #eef0ff; }
+
+        .hist-item-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+
+        .hist-detail { margin: -.2rem 0 .8rem; }
+
+        .hist-empty { color: #999; font-size: .9rem; text-align: center; padding: 1rem 0; }
+
+        #btn-refresh-hist {
+            font-size: .8rem;
+            font-weight: 500;
+            background: #f0f2f5;
+            color: #555;
+            border: 1px solid #ddd;
+            padding: .3rem .75rem;
+            border-radius: 6px;
+            margin-left: auto;
+        }
+
+        #btn-refresh-hist:hover { background: #e4e6eb; }
     </style>
 </head>
 <body>
@@ -198,6 +282,9 @@
             <div id="editor">
                 <p>Escreve ou cola aqui o texto que queres traduzir.</p>
             </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-top: .6rem;">
+            <button id="btn-clear" title="Limpar editor">Limpar</button>
         </div>
     </div>
 
@@ -234,7 +321,7 @@
     <div class="card">
         <div class="btn-row" style="margin-bottom: .75rem;">
             <button id="btn-translate">Traduzir</button>
-            <button id="btn-publish">Publicar e Guardar</button>
+            <button id="btn-publish">Guardar</button>
         </div>
         <div id="status"></div>
     </div>
@@ -243,6 +330,18 @@
         <div class="card">
             <h2>Resultados</h2>
             <div id="results-container"></div>
+        </div>
+    </div>
+
+    <div id="historico-area">
+        <div class="card">
+            <h2>
+                Histórico de Traduções
+                <button id="btn-refresh-hist">Atualizar</button>
+            </h2>
+            <div id="hist-list" class="hist-list">
+                <p class="hist-empty">A carregar…</p>
+            </div>
         </div>
     </div>
 </div>
@@ -270,6 +369,16 @@
 
     let lastRecord = null;
 
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        quill.setContents([]);
+        document.getElementById('results-area').style.display = 'none';
+        document.getElementById('btn-publish').style.display = 'none';
+        const status = document.getElementById('status');
+        status.textContent = '';
+        status.className = '';
+        lastRecord = null;
+    });
+
     function setStatus(msg, type) {
         const el = document.getElementById('status');
         el.textContent = msg;
@@ -279,6 +388,89 @@
     function getSelectedLangs() {
         return [...document.querySelectorAll('.lang-item input:checked')].map(cb => cb.value);
     }
+
+    async function loadHistorico() {
+        const list = document.getElementById('hist-list');
+        list.innerHTML = '<p class="hist-empty">A carregar…</p>';
+        try {
+            const res = await fetch(`${API_BASE}/historico`);
+            const data = await res.json();
+            renderHistorico(data.entries ?? []);
+        } catch {
+            list.innerHTML = '<p class="hist-empty" style="color:#991b1b">Não foi possível carregar o histórico.</p>';
+        }
+    }
+
+    function safeId(fileName) {
+        return fileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    function renderHistorico(entries) {
+        const list = document.getElementById('hist-list');
+        if (!entries.length) {
+            list.innerHTML = '<p class="hist-empty">Ainda não há traduções guardadas.</p>';
+            return;
+        }
+        list.innerHTML = '';
+        for (const e of entries) {
+            const date = new Date(e.createdAt).toLocaleString('pt-PT');
+            const kb = (e.sizeBytes / 1024).toFixed(1);
+            const id = safeId(e.fileName);
+
+            const item = document.createElement('div');
+            item.className = 'hist-item';
+            item.innerHTML = `
+                <div>
+                    <div>${e.fileName}</div>
+                    <div class="hist-meta">${date} · ${kb} KB</div>
+                </div>
+                <div class="hist-item-actions">
+                    <button class="btn-view" data-filename="${e.fileName}" data-target="hist-detail-${id}">Ver</button>
+                    <a class="btn-download" href="${API_BASE}/historico/${encodeURIComponent(e.fileName)}" download="${e.fileName}">Download json</a>
+                </div>
+            `;
+            list.appendChild(item);
+
+            const detail = document.createElement('div');
+            detail.className = 'hist-detail';
+            detail.id = `hist-detail-${id}`;
+            detail.style.display = 'none';
+            list.appendChild(detail);
+        }
+    }
+
+    document.getElementById('hist-list').addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('.btn-view');
+        if (!btn) return;
+
+        const fileName = btn.dataset.filename;
+        const detail = document.getElementById(btn.dataset.target);
+
+        if (detail.style.display === 'block') {
+            detail.style.display = 'none';
+            btn.textContent = 'Ver';
+            return;
+        }
+
+        detail.style.display = 'block';
+        btn.textContent = 'Ocultar';
+
+        if (detail.dataset.loaded) return;
+
+        detail.innerHTML = '<p class="hist-empty">A carregar…</p>';
+        try {
+            const res = await fetch(`${API_BASE}/historico/${encodeURIComponent(fileName)}/conteudo`);
+            if (!res.ok) throw new Error('Não encontrado');
+            const record = await res.json();
+            renderResults(record, detail);
+            detail.dataset.loaded = '1';
+        } catch (err) {
+            detail.innerHTML = `<p class="hist-empty" style="color:#991b1b">Não foi possível carregar esta tradução.</p>`;
+        }
+    });
+
+    document.getElementById('btn-refresh-hist').addEventListener('click', loadHistorico);
+    loadHistorico();
 
     document.getElementById('btn-translate').addEventListener('click', async () => {
         const html = quill.root.innerHTML.trim();
@@ -295,7 +487,7 @@
         const btn = document.getElementById('btn-translate');
         btn.disabled = true;
         btn.textContent = 'A traduzir...';
-        setStatus(`A traduzir...`, 'info');
+        setStatus('A traduzir...', 'info');
         document.getElementById('results-area').style.display = 'none';
         document.getElementById('btn-publish').style.display = 'none';
 
@@ -331,7 +523,7 @@
         const btn = document.getElementById('btn-publish');
         btn.disabled = true;
         btn.textContent = 'A guardar...';
-        setStatus('A publicar e guardar no ficheiro JSON...', 'info');
+        setStatus('A guardar no histórico…', 'info');
 
         try {
             const res = await fetch(`${API_BASE}/publish`, {
@@ -343,22 +535,23 @@
             const data = await res.json();
 
             if (!res.ok) {
-                setStatus(`Erro ao publicar: ${data.error ?? 'Erro desconhecido'}`, 'error'); return;
+                setStatus(`Erro ao guardar: ${data.error ?? 'Erro desconhecido'}`, 'error'); return;
             }
 
-            setStatus(`${data.message} (Total no histórico: ${data.totalRecords} registo(s))`, 'ok');
+            setStatus(`${data.message} Ficheiro: ${data.fileName}`, 'ok');
             btn.style.display = 'none';
+            loadHistorico();
 
         } catch (err) {
             setStatus(`Erro ao ligar ao endpoint /publish: ${err.message}`, 'error');
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Publicar e Guardar';
+            btn.textContent = 'Guardar';
         }
     });
 
-    function renderResults(record) {
-        const container = document.getElementById('results-container');
+    function renderResults(record, targetContainer) {
+        const container = targetContainer ?? document.getElementById('results-container');
         container.innerHTML = '';
 
         const origBlock = createResultBlock('Original - ' + (LANG_NAMES[record.sourceLanguage] ?? record.sourceLanguage), record.originalText);
@@ -370,7 +563,9 @@
             container.appendChild(block);
         }
 
-        document.getElementById('results-area').style.display = 'block';
+        if (!targetContainer) {
+            document.getElementById('results-area').style.display = 'block';
+        }
     }
 
     function createResultBlock(title, html) {

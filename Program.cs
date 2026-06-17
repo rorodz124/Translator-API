@@ -19,7 +19,7 @@ builder.Services.AddHttpClient<TranslationService>((sp, client) =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
     client.BaseAddress = new Uri(config["LibreTranslate:Url"] ?? "http://localhost:5050");
-    client.Timeout = TimeSpan.FromSeconds(120);
+    client.Timeout = TimeSpan.FromSeconds(200);
 });
 
 builder.Services.AddCors(options =>
