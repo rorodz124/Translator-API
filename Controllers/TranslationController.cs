@@ -17,6 +17,22 @@ public class TranslationController : ControllerBase
         _logger = logger;
     }
 
+    [HttpGet("languages")]
+    [ProducesResponseType(typeof(List<LanguageInfo>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> GetLanguages([FromQuery] bool refresh = false)
+    {
+        try
+        {
+            var languages = await _translationService.GetLanguagesAsync(refresh);
+            return Ok(languages);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao obter idiomas do LibreTranslate.");
+            return StatusCode(502, new { error = ex.Message });
+        }
+    }
 
     [HttpPost("translate")]
     [ProducesResponseType(typeof(TranslationResponse), StatusCodes.Status200OK)]
@@ -50,7 +66,6 @@ public class TranslationController : ControllerBase
         }
     }
 
-
     [HttpPost("publish")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -82,7 +97,6 @@ public class TranslationController : ControllerBase
         }
     }
 
-
     [HttpGet("historico")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public IActionResult GetHistorico()
@@ -90,7 +104,6 @@ public class TranslationController : ControllerBase
         var entries = _translationService.ListHistorico();
         return Ok(new { total = entries.Count, entries });
     }
-
 
     [HttpGet("historico/{fileName}")]
     public async Task<IActionResult> DownloadHistorico(string fileName)
@@ -103,7 +116,6 @@ public class TranslationController : ControllerBase
         return File(bytes, "application/json", name);
     }
 
-
     [HttpGet("historico/{fileName}/conteudo")]
     [ProducesResponseType(typeof(TranslationRecord), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -114,5 +126,18 @@ public class TranslationController : ControllerBase
             return NotFound(new { error = "Ficheiro não encontrado ou nome inválido." });
 
         return Ok(record);
+    }
+
+    [HttpDelete("historico/{fileName}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult DeleteHistorico(string fileName)
+    {
+        var deleted = _translationService.DeleteAsync(fileName);
+        if (!deleted)
+            return NotFound(new { error = "Ficheiro não encontrado ou nome inválido." });
+
+        _logger.LogInformation("Histórico eliminado: {fileName}", fileName);
+        return Ok(new { success = true, message = "Tradução eliminada com sucesso." });
     }
 }

@@ -27,18 +27,15 @@ public class TranslationService
 
     private static string ResolveFolder(string? configured, string contentRootPath)
     {
-        // Se vier um caminho absoluto na config, usa-o directamente
         if (!string.IsNullOrWhiteSpace(configured) && Path.IsPathRooted(configured))
         {
             Directory.CreateDirectory(configured);
             return configured;
         }
 
-        // Por defeito, guarda numa pasta "historico" na raiz do projeto
-        // (ContentRootPath = pasta onde está o .csproj quando corres com "dotnet run" / VS Code)
         var subFolder = !string.IsNullOrWhiteSpace(configured)
-            ? configured                        // nome/caminho relativo vindo da config
-            : "historico";
+            ? configured
+            : "JSON history";
 
         var folder = Path.Combine(contentRootPath, subFolder);
         Directory.CreateDirectory(folder);
@@ -110,7 +107,6 @@ public class TranslationService
             .ToList();
     }
 
-
     public async Task<(byte[] bytes, string fileName)?> DownloadAsync(string fileName)
     {
         var safe = Path.GetFileName(fileName);
@@ -124,7 +120,6 @@ public class TranslationService
         var bytes = await File.ReadAllBytesAsync(path);
         return (bytes, safe);
     }
-
 
     public async Task<TranslationRecord?> GetRecordAsync(string fileName)
     {
@@ -140,6 +135,27 @@ public class TranslationService
         return JsonSerializer.Deserialize<TranslationRecord>(json, _jsonOptions);
     }
 
+    private List<LanguageInfo>? _languagesCache;
+    private DateTime _languagesCacheAt;
+    private static readonly TimeSpan _languagesCacheTtl = TimeSpan.FromMinutes(10);
+
+    public async Task<List<LanguageInfo>> GetLanguagesAsync(bool forceRefresh = false)
+    {
+        if (!forceRefresh && _languagesCache != null && DateTime.UtcNow - _languagesCacheAt < _languagesCacheTtl)
+            return _languagesCache;
+
+        var response = await _httpClient.GetAsync("/languages");
+
+        if (!response.IsSuccessStatusCode)
+            throw new Exception($"LibreTranslate devolveu {response.StatusCode} ao listar idiomas.");
+
+        var json = await response.Content.ReadAsStringAsync();
+        var languages = JsonSerializer.Deserialize<List<LanguageInfo>>(json, _jsonOptions) ?? new List<LanguageInfo>();
+
+        _languagesCache = languages;
+        _languagesCacheAt = DateTime.UtcNow;
+        return languages;
+    }
 
     private async Task<string> CallLibreTranslateAsync(string html, string source, string target)
     {
@@ -157,5 +173,20 @@ public class TranslationService
             throw new Exception("Resposta do LibreTranslate não contém 'translatedText'.");
 
         return translatedText.GetString() ?? string.Empty;
+    }
+
+    public bool DeleteAsync(string fileName)
+    {
+        var safe = Path.GetFileName(fileName);
+        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
+            return false;
+
+        var path = Path.Combine(_historicoFolder, safe);
+        if (!File.Exists(path))
+            return false;
+
+        File.Delete(path);
+        _logger.LogInformation("Eliminado: '{path}'", path);
+        return true;
     }
 }

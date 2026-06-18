@@ -46,3 +46,10 @@ public class HistoricoEntry
     public DateTime CreatedAt { get; set; }
     public long SizeBytes { get; set; }
 }
+
+public class LanguageInfo
+{
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public List<string> Targets { get; set; } = new();
+}
