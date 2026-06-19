@@ -24,12 +24,11 @@ public class TranslationController : ControllerBase
     {
         try
         {
-            var languages = await _translationService.GetLanguagesAsync(refresh);
-            return Ok(languages);
+            return Ok(await _translationService.GetLanguagesAsync(refresh));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao obter idiomas do LibreTranslate.");
+            _logger.LogError(ex, "Error fetching languages from LibreTranslate.");
             return StatusCode(502, new { error = ex.Message });
         }
     }
@@ -46,22 +45,17 @@ public class TranslationController : ControllerBase
         if (request.TargetLanguages == null || request.TargetLanguages.Count == 0)
             return BadRequest(new { error = "Seleciona pelo menos um idioma de destino." });
 
-        _logger.LogInformation("Pedido de tradução: origem={src}, destinos={targets}",
+        _logger.LogInformation("Translation request: source={src}, targets={targets}",
             request.SourceLanguage, string.Join(", ", request.TargetLanguages));
 
         try
         {
             var record = await _translationService.TranslateAsync(request);
-            return Ok(new TranslationResponse
-            {
-                Success = true,
-                Message = "Tradução concluída.",
-                Result = record
-            });
+            return Ok(new TranslationResponse { Success = true, Message = "Tradução concluída.", Result = record });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro inesperado durante a tradução.");
+            _logger.LogError(ex, "Unexpected error during translation.");
             return StatusCode(502, new { error = ex.Message });
         }
     }
@@ -77,36 +71,31 @@ public class TranslationController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Record.OriginalText))
             return BadRequest(new { error = "O registo não tem texto original." });
 
-        _logger.LogInformation("A guardar registo de tradução ({count} idioma(s))...",
+        _logger.LogInformation("Saving translation record ({count} language(s))...",
             request.Record.Translations.Count);
 
         try
         {
             var fileName = await _translationService.PublishAsync(request.Record);
-            return Ok(new
-            {
-                success = true,
-                message = "Tradução guardada com sucesso.",
-                fileName
-            });
+            return Ok(new { success = true, message = "Tradução guardada com sucesso.", fileName });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao guardar registo.");
+            _logger.LogError(ex, "Error saving translation record.");
             return StatusCode(500, new { error = ex.Message });
         }
     }
 
     [HttpGet("historico")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult GetHistorico()
+    public IActionResult GetHistory()
     {
-        var entries = _translationService.ListHistorico();
+        var entries = _translationService.ListHistory();
         return Ok(new { total = entries.Count, entries });
     }
 
     [HttpGet("historico/{fileName}")]
-    public async Task<IActionResult> DownloadHistorico(string fileName)
+    public async Task<IActionResult> DownloadHistory(string fileName)
     {
         var result = await _translationService.DownloadAsync(fileName);
         if (result is null)
@@ -119,7 +108,7 @@ public class TranslationController : ControllerBase
     [HttpGet("historico/{fileName}/conteudo")]
     [ProducesResponseType(typeof(TranslationRecord), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetHistoricoConteudo(string fileName)
+    public async Task<IActionResult> GetHistoryContent(string fileName)
     {
         var record = await _translationService.GetRecordAsync(fileName);
         if (record is null)
@@ -131,13 +120,12 @@ public class TranslationController : ControllerBase
     [HttpDelete("historico/{fileName}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult DeleteHistorico(string fileName)
+    public IActionResult DeleteHistory(string fileName)
     {
-        var deleted = _translationService.DeleteAsync(fileName);
-        if (!deleted)
+        if (!_translationService.Delete(fileName))
             return NotFound(new { error = "Ficheiro não encontrado ou nome inválido." });
 
-        _logger.LogInformation("Histórico eliminado: {fileName}", fileName);
+        _logger.LogInformation("History entry deleted: {fileName}", fileName);
         return Ok(new { success = true, message = "Tradução eliminada com sucesso." });
     }
 }

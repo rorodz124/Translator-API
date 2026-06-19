@@ -33,13 +33,6 @@ public class PublishRequest
     public TranslationRecord Record { get; set; } = new();
 }
 
-public class PublishResponse
-{
-    public bool Success { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public int TotalRecords { get; set; }
-}
-
 public class HistoricoEntry
 {
     public string FileName { get; set; } = string.Empty;

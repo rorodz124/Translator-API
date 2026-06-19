@@ -11,7 +11,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Translator API",
         Version = "v1",
-        Description = "Motor de tradução HTML com suporte a Rich Text via LibreTranslate."
+        Description = "HTML translation engine with Rich Text support via LibreTranslate."
     });
 });
 

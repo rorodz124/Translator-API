@@ -9,7 +9,7 @@ public class TranslationService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<TranslationService> _logger;
-    private readonly string _historicoFolder;
+    private readonly string _historyFolder;
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -18,11 +18,15 @@ public class TranslationService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    private List<LanguageInfo>? _languagesCache;
+    private DateTime _languagesCachedAt;
+    private static readonly TimeSpan _languagesCacheTtl = TimeSpan.FromMinutes(10);
+
     public TranslationService(HttpClient httpClient, IConfiguration config, IHostEnvironment env, ILogger<TranslationService> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
-        _historicoFolder = ResolveFolder(config["Storage:HistoricoFolder"], env.ContentRootPath);
+        _historyFolder = ResolveFolder(config["Storage:HistoricoFolder"], env.ContentRootPath);
     }
 
     private static string ResolveFolder(string? configured, string contentRootPath)
@@ -33,15 +37,21 @@ public class TranslationService
             return configured;
         }
 
-        var subFolder = !string.IsNullOrWhiteSpace(configured)
-            ? configured
-            : "JSON history";
-
-        var folder = Path.Combine(contentRootPath, subFolder);
+        var folder = Path.Combine(contentRootPath, !string.IsNullOrWhiteSpace(configured) ? configured : "JSON history");
         Directory.CreateDirectory(folder);
         return folder;
     }
 
+    // Validates the file name and returns the full path, or null if invalid/not found
+    private string? ResolveSafePath(string fileName)
+    {
+        var safe = Path.GetFileName(fileName);
+        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
+            return null;
+
+        var path = Path.Combine(_historyFolder, safe);
+        return File.Exists(path) ? path : null;
+    }
 
     public async Task<TranslationRecord> TranslateAsync(TranslationRequest request)
     {
@@ -54,24 +64,16 @@ public class TranslationService
 
         foreach (var targetLang in request.TargetLanguages)
         {
-            _logger.LogInformation("A traduzir para [{lang}]...", targetLang);
+            _logger.LogInformation("Translating to [{lang}]...", targetLang);
             try
             {
                 var translated = await CallLibreTranslateAsync(request.HtmlContent, request.SourceLanguage, targetLang);
-                record.Translations.Add(new TranslationResult
-                {
-                    Language = targetLang,
-                    TranslatedText = translated
-                });
+                record.Translations.Add(new TranslationResult { Language = targetLang, TranslatedText = translated });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao traduzir para {lang}", targetLang);
-                record.Translations.Add(new TranslationResult
-                {
-                    Language = targetLang,
-                    TranslatedText = $"[ERRO: {ex.Message}]"
-                });
+                _logger.LogError(ex, "Error translating to {lang}", targetLang);
+                record.Translations.Add(new TranslationResult { Language = targetLang, TranslatedText = $"[ERRO: {ex.Message}]" });
             }
         }
 
@@ -83,110 +85,82 @@ public class TranslationService
         var langs = string.Join("-", record.Translations.Select(t => t.Language));
         var timestamp = record.RequestDate.ToString("yyyyMMdd_HHmmss");
         var fileName = $"traducao_{timestamp}_{record.SourceLanguage}-{langs}.json";
-        var filePath = Path.Combine(_historicoFolder, fileName);
+        var filePath = Path.Combine(_historyFolder, fileName);
 
-        var json = JsonSerializer.Serialize(record, _jsonOptions);
-        await File.WriteAllTextAsync(filePath, json, Encoding.UTF8);
+        await File.WriteAllTextAsync(filePath, JsonSerializer.Serialize(record, _jsonOptions), Encoding.UTF8);
 
-        _logger.LogInformation("Guardado: '{path}'", filePath);
+        _logger.LogInformation("Saved: '{path}'", filePath);
         return fileName;
     }
 
-    public List<HistoricoEntry> ListHistorico()
+    public List<HistoryEntry> ListHistory()
     {
         return Directory
-            .EnumerateFiles(_historicoFolder, "traducao_*.json")
+            .EnumerateFiles(_historyFolder, "traducao_*.json")
             .Select(path => new FileInfo(path))
             .OrderByDescending(fi => fi.LastWriteTimeUtc)
-            .Select(fi => new HistoricoEntry
-            {
-                FileName = fi.Name,
-                CreatedAt = fi.LastWriteTimeUtc,
-                SizeBytes = fi.Length
-            })
+            .Select(fi => new HistoryEntry { FileName = fi.Name, CreatedAt = fi.LastWriteTimeUtc, SizeBytes = fi.Length })
             .ToList();
     }
 
     public async Task<(byte[] bytes, string fileName)?> DownloadAsync(string fileName)
     {
-        var safe = Path.GetFileName(fileName);
-        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
-            return null;
+        var path = ResolveSafePath(fileName);
+        if (path is null) return null;
 
-        var path = Path.Combine(_historicoFolder, safe);
-        if (!File.Exists(path))
-            return null;
-
-        var bytes = await File.ReadAllBytesAsync(path);
-        return (bytes, safe);
+        return (await File.ReadAllBytesAsync(path), Path.GetFileName(path));
     }
 
     public async Task<TranslationRecord?> GetRecordAsync(string fileName)
     {
-        var safe = Path.GetFileName(fileName);
-        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
-            return null;
-
-        var path = Path.Combine(_historicoFolder, safe);
-        if (!File.Exists(path))
-            return null;
+        var path = ResolveSafePath(fileName);
+        if (path is null) return null;
 
         var json = await File.ReadAllTextAsync(path, Encoding.UTF8);
         return JsonSerializer.Deserialize<TranslationRecord>(json, _jsonOptions);
     }
 
-    private List<LanguageInfo>? _languagesCache;
-    private DateTime _languagesCacheAt;
-    private static readonly TimeSpan _languagesCacheTtl = TimeSpan.FromMinutes(10);
+    public bool Delete(string fileName)
+    {
+        var path = ResolveSafePath(fileName);
+        if (path is null) return false;
+
+        File.Delete(path);
+        _logger.LogInformation("Deleted: '{path}'", path);
+        return true;
+    }
 
     public async Task<List<LanguageInfo>> GetLanguagesAsync(bool forceRefresh = false)
     {
-        if (!forceRefresh && _languagesCache != null && DateTime.UtcNow - _languagesCacheAt < _languagesCacheTtl)
+        if (!forceRefresh && _languagesCache != null && DateTime.UtcNow - _languagesCachedAt < _languagesCacheTtl)
             return _languagesCache;
 
         var response = await _httpClient.GetAsync("/languages");
-
         if (!response.IsSuccessStatusCode)
-            throw new Exception($"LibreTranslate devolveu {response.StatusCode} ao listar idiomas.");
+            throw new Exception($"LibreTranslate returned {response.StatusCode} while listing languages.");
 
         var json = await response.Content.ReadAsStringAsync();
-        var languages = JsonSerializer.Deserialize<List<LanguageInfo>>(json, _jsonOptions) ?? new List<LanguageInfo>();
-
-        _languagesCache = languages;
-        _languagesCacheAt = DateTime.UtcNow;
-        return languages;
+        _languagesCache = JsonSerializer.Deserialize<List<LanguageInfo>>(json, _jsonOptions) ?? new List<LanguageInfo>();
+        _languagesCachedAt = DateTime.UtcNow;
+        return _languagesCache;
     }
 
     private async Task<string> CallLibreTranslateAsync(string html, string source, string target)
     {
-        var requestBody = new { q = html, source, target, format = "html" };
-        var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+        var content = new StringContent(
+            JsonSerializer.Serialize(new { q = html, source, target, format = "html" }),
+            Encoding.UTF8, "application/json");
 
         var response = await _httpClient.PostAsync("/translate", content);
+        var responseBody = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
-            throw new Exception($"LibreTranslate devolveu {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            throw new Exception($"LibreTranslate returned {response.StatusCode}: {responseBody}");
 
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
+        using var doc = JsonDocument.Parse(responseBody);
         if (!doc.RootElement.TryGetProperty("translatedText", out var translatedText))
-            throw new Exception("Resposta do LibreTranslate não contém 'translatedText'.");
+            throw new Exception("LibreTranslate response does not contain 'translatedText'.");
 
         return translatedText.GetString() ?? string.Empty;
-    }
-
-    public bool DeleteAsync(string fileName)
-    {
-        var safe = Path.GetFileName(fileName);
-        if (!safe.StartsWith("traducao_") || !safe.EndsWith(".json"))
-            return false;
-
-        var path = Path.Combine(_historicoFolder, safe);
-        if (!File.Exists(path))
-            return false;
-
-        File.Delete(path);
-        _logger.LogInformation("Eliminado: '{path}'", path);
-        return true;
     }
 }
