@@ -112,34 +112,20 @@ button{padding:.65rem 1.4rem;border:none;border-radius:8px;font-size:.95rem;font
 const API_BASE='http://localhost:5100/api';
 const $=id=>document.getElementById(id);
 
-// Tabela "bonita" só para mostrar bandeira + nome em português quando conhecemos a língua.
-// Não precisa de ser exaustiva: o que aqui não estiver aparece com 🌐 + o nome devolvido pela API.
-const FLAG_MAP={
-  pt:{flag:'🇵🇹',name:'Português'},en:{flag:'🇬🇧',name:'Inglês'},fr:{flag:'🇫🇷',name:'Francês'},
-  es:{flag:'🇪🇸',name:'Espanhol'},de:{flag:'🇩🇪',name:'Alemão'},it:{flag:'🇮🇹',name:'Italiano'},
-  nl:{flag:'🇳🇱',name:'Holandês'},zh:{flag:'🇨🇳',name:'Chinês'},ja:{flag:'🇯🇵',name:'Japonês'},
-  ar:{flag:'🇸🇦',name:'Árabe'},ru:{flag:'🇷🇺',name:'Russo'},pl:{flag:'🇵🇱',name:'Polaco'},
-  ko:{flag:'🇰🇷',name:'Coreano'},tr:{flag:'🇹🇷',name:'Turco'},sv:{flag:'🇸🇪',name:'Sueco'},
-  da:{flag:'🇩🇰',name:'Dinamarquês'},fi:{flag:'🇫🇮',name:'Finlandês'},el:{flag:'🇬🇷',name:'Grego'},
-  he:{flag:'🇮🇱',name:'Hebraico'},hi:{flag:'🇮🇳',name:'Hindi'},hu:{flag:'🇭🇺',name:'Húngaro'},
-  id:{flag:'🇮🇩',name:'Indonésio'},cs:{flag:'🇨🇿',name:'Checo'},ro:{flag:'🇷🇴',name:'Romeno'},
-  uk:{flag:'🇺🇦',name:'Ucraniano'},vi:{flag:'🇻🇳',name:'Vietnamita'},fa:{flag:'🇮🇷',name:'Persa'},
-  sk:{flag:'🇸🇰',name:'Eslovaco'},bg:{flag:'🇧🇬',name:'Búlgaro'},sl:{flag:'🇸🇮',name:'Esloveno'},
-  lt:{flag:'🇱🇹',name:'Lituano'},lv:{flag:'🇱🇻',name:'Letão'},et:{flag:'🇪🇪',name:'Estónio'},
-  ga:{flag:'🇮🇪',name:'Irlandês'},ms:{flag:'🇲🇾',name:'Malaio'},th:{flag:'🇹🇭',name:'Tailandês'},
-  ca:{flag:'🏴',name:'Catalão'},az:{flag:'🇦🇿',name:'Azerbaijano'},eo:{flag:'🌐',name:'Esperanto'},
-  ur:{flag:'🇵🇰',name:'Urdu'},sq:{flag:'🇦🇱',name:'Albanês'},nb:{flag:'🇳🇴',name:'Norueguês'},
-  tl:{flag:'🇵🇭',name:'Tagalo'},sw:{flag:'🇰🇪',name:'Suaíli'},'zt':{flag:'🇨🇳',name:'Chinês (tradicional)'}
+
+const PORTUGUESE_NAMES={
+  pt:'Português',pb:'Português (Brasil)',en:'Inglês',fr:'Francês',es:'Espanhol',
+  de:'Alemão',it:'Italiano',nl:'Holandês',zh:'Chinês',zt:'Chinês (tradicional)',
+  ja:'Japonês',ar:'Árabe',ru:'Russo',pl:'Polaco',ko:'Coreano',tr:'Turco',
+  sv:'Sueco',da:'Dinamarquês',fi:'Finlandês',el:'Grego',he:'Hebraico',hi:'Hindi',
+  hu:'Húngaro',id:'Indonésio',cs:'Checo',ro:'Romeno',uk:'Ucraniano',vi:'Vietnamita',
+  fa:'Persa',sk:'Eslovaco',bg:'Búlgaro',sl:'Esloveno',lt:'Lituano',lv:'Letão',
+  et:'Estónio',ga:'Irlandês',ms:'Malaio',th:'Tailandês',ca:'Catalão',az:'Azerbaijano',
+  eo:'Esperanto',ur:'Urdu',sq:'Albanês',nb:'Norueguês',tl:'Tagalo',eu:'Basco',
+  bn:'Bengali',gl:'Galego',ky:'Quirguiz'
 };
 
-// Preenchido dinamicamente em loadLanguages() a partir do que a API/LibreTranslate devolver.
 let LANG_NAMES={};
-
-function labelFor(code,apiName){
-  const known=FLAG_MAP[code];
-  if(known)return`${known.flag} ${known.name}`;
-  return`🌐 ${apiName||code.toUpperCase()}`;
-}
 
 async function loadLanguages(){
   const select=$('source-lang');
@@ -148,14 +134,14 @@ async function loadLanguages(){
     const languages=await(await fetch(`${API_BASE}/languages`)).json();
     if(!Array.isArray(languages)||!languages.length)throw new Error('Lista vazia');
 
-    languages.sort((a,b)=>labelFor(a.code,a.name).localeCompare(labelFor(b.code,b.name),'pt'));
+    languages.sort((a,b)=>(PORTUGUESE_NAMES[a.code]||a.name||a.code).localeCompare(PORTUGUESE_NAMES[b.code]||b.name||b.code,'pt'));
 
     LANG_NAMES={};
     select.innerHTML='';
     grid.innerHTML='';
 
     for(const lang of languages){
-      const label=labelFor(lang.code,lang.name);
+      const label=PORTUGUESE_NAMES[lang.code]||lang.name||lang.code.toUpperCase();
       LANG_NAMES[lang.code]=label;
 
       const opt=document.createElement('option');
