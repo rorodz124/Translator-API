@@ -1,0 +1,27 @@
+bin/
+obj/
+
+.vs/
+.vscode/
+*.user
+*.suo
+
+.git/
+.gitignore
+
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+*.log
+JSON history/
+historico/
+
+.DS_Store
+Thumbs.db
+
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+*.p12
+secrets.json

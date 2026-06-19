@@ -30,18 +30,18 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors("AllowAll");
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(options =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Translator API v1");
-        options.RoutePrefix = "swagger";
-    });
-}
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Translator API v1");
+    options.RoutePrefix = "swagger";
+});
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.MapControllers();
 app.Run();

@@ -33,7 +33,7 @@ public class PublishRequest
     public TranslationRecord Record { get; set; } = new();
 }
 
-public class HistoricoEntry
+public class HistoryEntry
 {
     public string FileName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

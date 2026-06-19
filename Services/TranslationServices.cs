@@ -42,7 +42,6 @@ public class TranslationService
         return folder;
     }
 
-    // Validates the file name and returns the full path, or null if invalid/not found
     private string? ResolveSafePath(string fileName)
     {
         var safe = Path.GetFileName(fileName);

@@ -15,7 +15,43 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s 
+    networks:
+      - translator-net
+
+  translatorapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: translatorapi
+    restart: unless-stopped
+    ports:
+      - "5100:5100"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5100
+      - LibreTranslate__Url=http://libretranslate:5000
+      - Storage__HistoricoFolder=/app/json-history
+    volumes:
+      - translator_history:/app/json-history
+    depends_on:
+      libretranslate:
+        condition: service_healthy
+    networks:
+      - translator-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5100/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   lt_models:
+    driver: local
+  translator_history:
+    driver: local
+
+networks:
+  translator-net:
+    driver: bridge

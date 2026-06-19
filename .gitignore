@@ -1,5 +1,19 @@
 bin/
 obj/
+
 .vs/
+.vscode/
+*.user
+*.suo
 
 JSON history/
+historico/
+json-history/
+
+appsettings.Local.json
+secrets.json
+*.pfx
+*.p12
+
+.DS_Store
+Thumbs.db
